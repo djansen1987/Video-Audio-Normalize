@@ -18,9 +18,11 @@ param (
     $InputFolder,$OutputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg")]$InputFileType, [switch]$Force
  )
 
+$ScriptDir = Split-Path $script:MyInvocation.MyCommand.Path
 
 
-Function start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg")]$InputFileType, $Force){
+
+Function Start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg")]$InputFileType, $Force){
  
     if(!$InputFileType){
         write-host "Inputtype Default (*.mp4)"
@@ -52,6 +54,56 @@ Function start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4"
 
 }
 
+function Register-ffmpeg ([switch]$Replace){
+
+    if($replace){
+        $ffmpeg = ($ENV:PATH).Split((";"))|?{$_ -like "*ffmpeg*"}
+    
+        if($ffmpeg){
+            if(Test-Path ($ScriptDir+ "\Temp\temp.path") ){
+                Move-Item ($ScriptDir+ "\Temp\temp.path") ($ScriptDir+ "\Temp\temp"+(Get-Random)+ ".path") -ea Stop
+            }
+
+            $(($ENV:PATH).Split((";"))|?{$_ -notlike "*ffmpeg*"})|%{Add-Content -NoNewline -Value ($_ + ";") -Path ($ScriptDir+ "\Temp\temp.path") }
+            if(Test-Path ($ScriptDir+ "\Temp\temp.path") ){
+            $temppath = Get-Content ($ScriptDir+ "\Temp\temp.path") -ea Stop
+            
+                $ENV:PATH = $temppath.Substring(0,$temppath.Length-1)
+            }
+        
+        }
+
+        $Currentffmpeg = $ScriptDir + "\Source\ffmpeg\bin\ffmpeg.exe"
+
+        if(test-path $Currentffmpeg){
+           $ENV:PATH = "$ENV:PATH;$(($Currentffmpeg).ToString())"
+        }else{
+           Write-Warning "Could not find ffmpeg in your `$PATH or `$FFMPEG_PATH. Please install ffmpeg from http://ffmpeg.org"
+           break
+        }
+    }
+
+}
+
+# find ffmpeg
+$ffmpeg = ($ENV:PATH).Split((";"))|?{$_ -like "*ffmpeg*"}
+
+if($ffmpeg){
+
+    if(!(Test-Path $ffmpeg)){
+        Register-ffmpeg -Replace
+    }
+
+
+    start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -force $Force
+
+}else{
+    Register-ffmpeg -Replace
+    Start-Sleep 5 
+    start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -force $Force
+}
+
+
+
 #$InputFolder = "C:\Users\Studio\Videos\Bruiloft 15-6 - 2019\"
 #$OutputFolder = "C:\Users\Studio\Videos\Bruiloft 15-6 - 2019\norm"
-start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType *.mp4 -force $Force
