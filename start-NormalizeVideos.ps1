@@ -9,21 +9,31 @@
     Normalize your video audio
 .EXAMPLE
     C:\PS> 
-    start-NormalizeVideos -InputFolder c:\temp\myoldvideos -OutputFolder C:\Temp\mynormalizedvideos -InputFileType *.mp4
+    Start-NormalizeVideos -InputFolder c:\temp\myoldvideos -InputFileType *.mp4 -Backup
+    Start-NormalizeVideos -InputFolder c:\temp\myoldvideos -Backup
+    Start-NormalizeVideos -InputFolder c:\temp\myoldvideos -ForceRemove -InputFileType *.mkv
 .NOTES
     Author: Daniel Jansen
     Date:   June 06, 2019
 #>
 param (
-    $InputFolder,$OutputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg")]$InputFileType, [switch]$Force
+    $InputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg", "All")]$InputFileType, [switch]$Backup,[switch]$ForceRemove
  )
 
 $ScriptDir = Split-Path $script:MyInvocation.MyCommand.Path
 
 
 
-Function Start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg")]$InputFileType, $Force){
- 
+Function Start-NormalizeVideos ($InputFolder, [ValidateSet("*.mp4", "*.mkv", "*.mpg", "All")]$InputFileType,  [switch]$backup,[switch]$ForceRemove){
+    <#if(!(Test-Path $OutputFolder)){
+        $reply = Read-Host -Prompt "Output Folder does not exist. Create ? [y/n]"
+        if ( $reply -match "[yY]" ) { 
+             Highway to the danger zone 
+            Write-Host "Creating output folder"
+            New-Item -Path $OutputFolder -ItemType Directory -Force
+        }else {break}
+    }#>
+
     if(!$InputFileType){
         write-host "Inputtype Default (*.mp4)"
         $FileType = "*.mp4"
@@ -31,7 +41,7 @@ Function Start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4"
         write-host "Inputtype is: $InputFileType"
         $FileType = $InputFileType
     }
-    if($Force -eq $true){
+    <#if($Force -eq $true){
         #write-host $Force
         $reply = Read-Host -Prompt "Force enabled. This means files in output directory are overwritten. Continue ? [y/n]"
         if ( $reply -match "[yY]" ) { 
@@ -39,16 +49,45 @@ Function Start-NormalizeVideos ($InputFolder,$OutputFolder, [ValidateSet("*.mp4"
             Write-Host "Continue, files in output directory are overwritten"
             $ForceParamter = "-f"
         }else {break}
+    }#>
+    New-Item -Path "$InputFolder\Backup\" -ItemType Directory -Force | Out-Null
+    if($inputfiletype -like "All"){
+        $oldvids = Get-ChildItem $InputFolder -File| Move-Item -Destination "$InputFolder\Backup\"
+    }else{
+        $oldvids = Get-ChildItem $InputFolder -File|? {$_.name -like $InputFileType}| Move-Item -Destination "$InputFolder\Backup\"
     }
+    Start-Sleep 1
+    $Items = Get-ChildItem -Path "$InputFolder\Backup\"
 
-    $oldvids = Get-ChildItem $InputFolder -Recurse |? {$_.name -like $InputFileType}
-    if (!$oldvids ){
+    if (!$Items){
         Write-Host "no Files Found"
     }else {
-        foreach ($oldvid in ($oldvids)) {
-            Write-Host "Converting: " $oldvid.Name
-            $FileToConvert = '"'+ ($oldvid.FullName).tostring() + '"'
-            ffmpeg-normalize $FileToConvert -of $OutputFolder --normalization-type peak --target-level 0 -c:a aac -b:a 256k -ext mp4 $ForceParamter 
+        
+        #$oldvids | Move-Item -Destination "$InputFolder\Backup\"
+        
+
+        $Items|% {
+            Write-Host "Converting: " $_.Name
+            $FileToConvert = '"'+ ($_.FullName).tostring() + '"'
+            ffmpeg-normalize $_.FullName -of $InputFolder --normalization-type peak --target-level 0 -c:a libmp3lame -b:a 256k -ext mp4 $ForceParamter 
+        }
+
+        if($Backup){
+            break
+        }elseif($ForceRemove){
+            Get-ChildItem -Path "$InputFolder\Backup\"|Remove-Item 
+        }else{
+            $reply = Read-Host -Prompt "WARNING! You did not choose to keep the backup the original files. Continue removing originals ? [y/n]"
+            if ( $reply -match "[yY]" ) { 
+                # Highway to the danger zone 
+                Write-Host "Clearing Backup folder"
+                Get-ChildItem -Path "$InputFolder\Backup\"|Remove-Item 
+            }else {
+                Write-Host "No worries we saved your originals at `"$InputFolder\Backup\`""
+                Read-Host "Enter to exit."
+                break
+            }
+    
         }
     }
 
@@ -88,22 +127,23 @@ function Register-ffmpeg ([switch]$Replace){
 # find ffmpeg
 $ffmpeg = ($ENV:PATH).Split((";"))|?{$_ -like "*ffmpeg*"}
 
-if($ffmpeg){
+if(Test-Path $InputFolder){
+    if($ffmpeg){
 
-    if(!(Test-Path $ffmpeg)){
+        if(!(Test-Path $ffmpeg)){
+            Register-ffmpeg -Replace
+        }
+
+
+        start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -backup $Backup
+
+    }else{
         Register-ffmpeg -Replace
+        Start-Sleep 5 
+        start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -force $Force
     }
-
-
-    start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -force $Force
-
 }else{
-    Register-ffmpeg -Replace
-    Start-Sleep 5 
-    start-NormalizeVideos -InputFolder $InputFolder -OutputFolder $OutputFolder -InputFileType $InputFileType -force $Force
+    Write-Warning "Input Path not found"
+    Read-Host "Enter to exit."
+    break
 }
-
-
-
-#$InputFolder = "C:\Users\Studio\Videos\Bruiloft 15-6 - 2019\"
-#$OutputFolder = "C:\Users\Studio\Videos\Bruiloft 15-6 - 2019\norm"
